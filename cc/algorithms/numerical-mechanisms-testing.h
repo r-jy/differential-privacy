@@ -38,21 +38,14 @@ class ZeroNoiseMechanism : public LaplaceMechanism {
    public:
     Builder() : LaplaceMechanism::Builder() {}
 
-    base::StatusOr<std::unique_ptr<LaplaceMechanism>> Build() override {
+    base::StatusOr<std::unique_ptr<NumericalMechanism>> Build() override {
       return base::StatusOr<std::unique_ptr<LaplaceMechanism>>(
           absl::make_unique<ZeroNoiseMechanism>(epsilon_.value_or(1),
                                                l1_sensitivity_.value_or(1)));
     }
 
     std::unique_ptr<LaplaceMechanism::Builder> Clone() const override {
-      Builder clone;
-      if (epsilon_.has_value()) {
-        clone.SetEpsilon(epsilon_.value());
-      }
-      if (l1_sensitivity_.has_value()) {
-        clone.SetL1Sensitivity(l1_sensitivity_.value());
-      }
-      return absl::make_unique<Builder>(clone);
+      return absl::make_unique<Builder>(*this);
     }
   };
 
@@ -75,6 +68,19 @@ class ZeroNoiseMechanism : public LaplaceMechanism {
   int64_t MemoryUsed() override { return sizeof(ZeroNoiseMechanism); }
 };
 
+class SeededGeometricDistribution : public internal::GeometricDistribution {
+ public:
+  SeededGeometricDistribution(double lambda, std::mt19937* rand_gen)
+      : internal::GeometricDistribution(lambda), rand_gen_(rand_gen) {}
+
+  double GetUniformDouble() override {
+    return absl::Uniform(*rand_gen_, 0, 1.0);
+  }
+
+ private:
+  std::mt19937* rand_gen_;
+};
+
 // A numerical distribution that generates consistent noise from a pre-seeded
 // RNG, intended to make statistical tests completely reliable. Does not perform
 // snapping. Use only for testing. Not differentially private.
@@ -91,11 +97,15 @@ class SeededLaplaceDistribution : public internal::LaplaceDistribution {
       owned_rand_gen_ = std::mt19937(seed);
       rand_gen_ = &owned_rand_gen_;
     }
+    geometric_distro_ = absl::make_unique<SeededGeometricDistribution>(
+        geometric_distro_->Lambda(), rand_gen_);
   }
 
   double GetUniformDouble() override {
     return absl::Uniform(*rand_gen_, 0, 1.0);
   }
+
+  bool GetBoolean() override { return absl::Bernoulli(*rand_gen_, 0.5); }
 
  protected:
   std::mt19937* rand_gen_;
@@ -120,22 +130,14 @@ class SeededLaplaceMechanism : public LaplaceMechanism {
    public:
     Builder() : LaplaceMechanism::Builder() {}
 
-    base::StatusOr<std::unique_ptr<LaplaceMechanism>> Build() override {
+    base::StatusOr<std::unique_ptr<NumericalMechanism>> Build() override {
       return base::StatusOr<std::unique_ptr<LaplaceMechanism>>(
           absl::make_unique<SeededLaplaceMechanism>(
               epsilon_.value_or(1), l1_sensitivity_.value_or(1), rand_gen_));
     }
 
     std::unique_ptr<LaplaceMechanism::Builder> Clone() const override {
-      SeededLaplaceMechanism::Builder clone;
-      clone.rand_gen(rand_gen_);
-      if (epsilon_.has_value()) {
-        clone.SetEpsilon(epsilon_.value());
-      }
-      if (l1_sensitivity_.has_value()) {
-        clone.SetL1Sensitivity(l1_sensitivity_.value());
-      }
-      return absl::make_unique<Builder>(clone);
+      return absl::make_unique<Builder>(*this);
     }
 
     SeededLaplaceMechanism::Builder& rand_gen(std::mt19937* rand_gen) {
@@ -168,7 +170,7 @@ class MockLaplaceMechanism : public LaplaceMechanism {
     Builder() : mock_(absl::make_unique<MockLaplaceMechanism>()) {}
 
     // Can only be called once.
-    base::StatusOr<std::unique_ptr<LaplaceMechanism>> Build() override {
+    base::StatusOr<std::unique_ptr<NumericalMechanism>> Build() override {
       return base::StatusOr<std::unique_ptr<LaplaceMechanism>>(
           std::unique_ptr<LaplaceMechanism>(mock_.release()));
     }

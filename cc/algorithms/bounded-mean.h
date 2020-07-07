@@ -75,31 +75,31 @@ class BoundedMean : public Algorithm<T> {
 
       // If manual bounding, check bounds and construct mechanism so we can fail
       // on build if sensitivity is inappropriate.
-      std::unique_ptr<LaplaceMechanism> sum_mechanism = nullptr;
+      std::unique_ptr<NumericalMechanism> sum_mechanism = nullptr;
       if (BoundedBuilder::BoundsAreSet()) {
         RETURN_IF_ERROR(CheckBounds(BoundedBuilder::lower_.value(),
                                     BoundedBuilder::upper_.value()));
         ASSIGN_OR_RETURN(
             sum_mechanism,
-            AlgorithmBuilder::laplace_mechanism_builder_
+            AlgorithmBuilder::mechanism_builder_
                 ->SetEpsilon(AlgorithmBuilder::epsilon_.value())
-                .SetSensitivity(std::abs(BoundedBuilder::upper_.value() -
-                                         BoundedBuilder::lower_.value()) /
-                                2)
+                .SetL1Sensitivity(std::abs(BoundedBuilder::upper_.value() -
+                                           BoundedBuilder::lower_.value()) /
+                                  2)
                 .Build());
       }
 
       // The count noising doesn't depend on the bounds, so we can always
       // construct the mechanism we use for it here.
-      std::unique_ptr<LaplaceMechanism> count_mechanism;
+      std::unique_ptr<NumericalMechanism> count_mechanism;
       ASSIGN_OR_RETURN(count_mechanism,
-                       AlgorithmBuilder::laplace_mechanism_builder_
+                       AlgorithmBuilder::mechanism_builder_
                            ->SetEpsilon(AlgorithmBuilder::epsilon_.value())
-                           .SetSensitivity(1)
+                           .SetL1Sensitivity(1)
                            .Build());
 
       // Construct BoundedMean.
-      auto mech_builder = AlgorithmBuilder::laplace_mechanism_builder_->Clone();
+      auto mech_builder = AlgorithmBuilder::mechanism_builder_->Clone();
       return absl::WrapUnique(new BoundedMean(
           AlgorithmBuilder::epsilon_.value(),
           BoundedBuilder::lower_.value_or(0),
@@ -203,8 +203,8 @@ class BoundedMean : public Algorithm<T> {
  private:
   BoundedMean(const double epsilon, T lower, T upper,
               std::unique_ptr<LaplaceMechanism::Builder> mechanism_builder,
-              std::unique_ptr<LaplaceMechanism> sum_mechanism,
-              std::unique_ptr<LaplaceMechanism> count_mechanism,
+              std::unique_ptr<NumericalMechanism> sum_mechanism,
+              std::unique_ptr<NumericalMechanism> count_mechanism,
               std::unique_ptr<ApproxBounds<T>> approx_bounds = nullptr)
       : Algorithm<T>(epsilon),
         raw_count_(0),
@@ -292,7 +292,7 @@ class BoundedMean : public Algorithm<T> {
       ASSIGN_OR_RETURN(
           sum_mechanism_,
           mechanism_builder_->SetEpsilon(Algorithm<T>::GetEpsilon())
-              .SetSensitivity(std::abs(upper_ - lower_) / 2)
+              .SetL1Sensitivity(std::abs(upper_ - lower_) / 2)
               .Build());
     }
     return base::OkStatus();
@@ -310,8 +310,8 @@ class BoundedMean : public Algorithm<T> {
 
   // The count and the sum will have different sensitivites, so we need
   // different mechanisms to noise them.
-  std::unique_ptr<LaplaceMechanism> sum_mechanism_;
-  std::unique_ptr<LaplaceMechanism> count_mechanism_;
+  std::unique_ptr<NumericalMechanism> sum_mechanism_;
+  std::unique_ptr<NumericalMechanism> count_mechanism_;
 
   // If this is not nullptr, we are automatically determining bounds. Otherwise,
   // lower and upper contain the manually set bounds.
